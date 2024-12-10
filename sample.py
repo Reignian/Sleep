@@ -25,6 +25,7 @@ video_active = False
 eyes_closed_start = None  # Track when eyes started being closed
 alarm_active = False  # Track if alarm is currently playing
 alarm_thread = None  # Thread for continuous alarm
+no_face_start_time = None  # Track when no face was detected
 
 # Function to calculate the Eye Aspect Ratio (EAR)
 def calculate_ear(eye_points, face_landmarks):
@@ -49,6 +50,13 @@ def play_continuous_alarm():
         if not alarm_active:
             break
 
+def play_continuous_alarm2():
+    global alarm_active
+    while alarm_active:
+        playsound('facetheroad.mp3', block=True)
+        if not alarm_active:
+            break
+
 # Function to handle the alarm logic
 def handle_alarm():
     global alarm_active, alarm_thread
@@ -58,9 +66,17 @@ def handle_alarm():
         alarm_thread.daemon = True
         alarm_thread.start()
 
+def handle_alarm2():
+    global alarm_active, alarm_thread
+    if not alarm_active or (alarm_thread and not alarm_thread.is_alive()):
+        alarm_active = True
+        alarm_thread = threading.Thread(target=play_continuous_alarm2)
+        alarm_thread.daemon = True
+        alarm_thread.start()
+
 # Function to capture and analyze each frame for eye status
 def capture_img_sample(img):
-    global eyes_closed_start, alarm_active
+    global eyes_closed_start, alarm_active, no_face_start_time
     gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
     # Detect face
@@ -76,10 +92,15 @@ def capture_img_sample(img):
     eyes_closed = False
 
     if len(faces) == 0:
-        # No face detected, play alarm sound
-        handle_alarm()
+        # No face detected
+        if no_face_start_time is None:
+            no_face_start_time = time.time()  # Start the timer
+        elif time.time() - no_face_start_time > 1.5:
+            # If no face has been detected for more than 1.5 seconds, play alarm sound
+            handle_alarm2()
         cv2.putText(img, "No Face Detected", (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
     else:
+        no_face_start_time = None  # Reset timer if face is detected
         for (x, y, w, h) in faces:
             # Draw rectangle around the face
             cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 2)
@@ -127,7 +148,7 @@ def capture_img_sample(img):
                     cv2.putText(img, "Eyes Closed", (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                     if eyes_closed_start is None:
                         eyes_closed_start = time.time()
-                    elif time.time() - eyes_closed_start > 2:
+                    elif time.time() - eyes_closed_start > 1.5:
                         handle_alarm()
                 else:
                     cv2.putText(img, "Eyes Open", (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
@@ -158,38 +179,127 @@ def stop_capture():
 
 # Function to continuously show frames in main Tkinter window
 def show_frame():
-    global cap
     if video_active and cap.isOpened():
         success, img = cap.read()
         if success:
             img = capture_img_sample(img)
             img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             img_pil = Image.fromarray(img_rgb)
+            
+            # Calculate aspect ratio to maintain image proportions
+            display_width = 700  # Maximum width for display
+            width, height = img_pil.size
+            aspect_ratio = height / width
+            display_height = int(display_width * aspect_ratio)
+            
+            img_pil = img_pil.resize((display_width, display_height), Image.Resampling.LANCZOS)
             img_tk = ImageTk.PhotoImage(img_pil)
-            camera_label.config(image=img_tk)
+            camera_label.configure(image=img_tk)
             camera_label.image = img_tk
             root.after(10, show_frame)
 
-# Setup Tkinter window
+# Setup Tkinter window with modern design
 root = tk.Tk()
 root.title("Sleep Detection System")
-root.geometry("800x600")
-root.config(bg="#f0f0f0")
+root.geometry("900x700")
+root.configure(bg="#2C3E50")  # Dark blue background
 
-camera_frame = tk.Frame(root, bg="#f0f0f0")
-camera_frame.pack(pady=10)
+# Create title frame
+title_frame = tk.Frame(root, bg="#2C3E50")
+title_frame.pack(pady=10)
 
-camera_label = tk.Label(camera_frame, text="Click 'Start Camera' to begin", bg="#f0f0f0", font=('Arial', 12))
-camera_label.pack()
+title_label = tk.Label(
+    title_frame,
+    text="Sleep Detection System",
+    font=('Helvetica', 20, 'bold'),
+    fg="#ECF0F1",
+    bg="#2C3E50"
+)
+title_label.pack()
 
-button_frame = tk.Frame(root, bg="#f0f0f0")
-button_frame.pack(pady=10)
+subtitle_label = tk.Label(
+    title_frame,
+    text="Stay Awake, Stay Safe",
+    font=('Helvetica', 12),
+    fg="#BDC3C7",
+    bg="#2C3E50"
+)
+subtitle_label.pack(pady=5)
 
-start_button = tk.Button(button_frame, text="Start Camera", command=start_capture, bg="#4CAF50", fg="white", padx=20)
-start_button.pack(side=tk.LEFT, padx=5)
+# Create main content frame
+main_frame = tk.Frame(root, bg="#2C3E50")
+main_frame.pack(expand=True, fill='both', padx=20)
 
-stop_button = tk.Button(button_frame, text="Stop Camera", command=stop_capture, bg="#f44336", fg="white", padx=20)
-stop_button.pack(side=tk.LEFT, padx=5)
+# Create camera frame with border
+camera_frame = tk.Frame(
+    main_frame,
+    bg="#34495E",
+    highlightbackground="#3498DB",
+    highlightthickness=2,
+    bd=0
+)
+camera_frame.pack(expand=True, fill='both', pady=10)
 
+# Initial camera label with styled message
+camera_label = tk.Label(
+    camera_frame,
+    text="Click 'Start Monitoring' to begin your session",
+    font=('Helvetica', 12),
+    fg="#ECF0F1",
+    bg="#34495E",
+    pady=15
+)
+camera_label.pack(expand=True)
+
+# Create control panel frame
+control_frame = tk.Frame(root, bg="#2C3E50")
+control_frame.pack(pady=15, padx=20)
+
+# Style buttons
+button_style = {
+    'font': ('Helvetica', 11),
+    'padx': 25,
+    'pady': 8,
+    'bd': 0,
+    'borderwidth': 0
+}
+
+start_button = tk.Button(
+    control_frame,
+    text="Start Monitoring",
+    command=start_capture,
+    bg="#27AE60",  # Green
+    fg="white",
+    activebackground="#219A52",
+    **button_style
+)
+start_button.pack(side=tk.LEFT, padx=10)
+
+stop_button = tk.Button(
+    control_frame,
+    text="Pause Monitoring",
+    command=stop_capture,
+    bg="#E74C3C",  # Red
+    fg="white",
+    activebackground="#C0392B",
+    **button_style
+)
+stop_button.pack(side=tk.LEFT, padx=10)
+
+# Add status bar
+status_bar = tk.Label(
+    root,
+    text="Ready to monitor",
+    font=('Helvetica', 9),
+    fg="#BDC3C7",
+    bg="#2C3E50",
+    bd=1,
+    relief=tk.SUNKEN,
+    anchor=tk.W
+)
+status_bar.pack(side=tk.BOTTOM, fill=tk.X, pady=5)
+
+# Handle window closing
 root.protocol("WM_DELETE_WINDOW", lambda: (stop_capture(), root.destroy()))
+
 root.mainloop()
