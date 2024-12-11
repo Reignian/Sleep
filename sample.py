@@ -77,6 +77,9 @@ def handle_alarm2():
 # Function to capture and analyze each frame for eye status
 def capture_img_sample(img):
     global eyes_closed_start, alarm_active, no_face_start_time
+    # Mirror the image horizontally
+    img = cv2.flip(img, 1)
+    
     gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
     # Detect face
